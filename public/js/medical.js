@@ -141,15 +141,20 @@ reAnalyzeBtn.addEventListener("click", async () => {
 
 // === Update hasil diagnosa ===
 function updateDiagnosa(data) {
-    document.getElementById("utama").value = data.diagnosa_utama?.diagnosa ?
-        `${data.diagnosa_utama.diagnosa} (${(data.diagnosa_utama.confidence * 100).toFixed(1)}%)` :
-        "";
+    const utama = data.diagnosa_utama;
+    const sek1 = data.diagnosa_sekunder_1;
+    const sek2 = data.diagnosa_sekunder_2;
 
-    document.getElementById("sekunder1").value = data.diagnosa_sekunder_1?.diagnosa ?
-        `${data.diagnosa_sekunder_1.diagnosa} (${(data.diagnosa_sekunder_1.confidence * 100).toFixed(1)}%)` :
-        "";
+    function formatDiagnosa(d) {
+        if (!d) return "";
+        const name = d.diagnosa || "-";
+        const icd = d.icd10 || "";
+        const conf = d.confidence ? ` (${(d.confidence * 100).toFixed(1)}%)` : "";
+        // format: K29.7 - Gastritis (82.0%)
+        return `${icd} - ${name}${conf}`;
+    }
 
-    document.getElementById("sekunder2").value = data.diagnosa_sekunder_2?.diagnosa ?
-        `${data.diagnosa_sekunder_2.diagnosa} (${(data.diagnosa_sekunder_2.confidence * 100).toFixed(1)}%)` :
-        "";
+    document.getElementById("utama").value = formatDiagnosa(utama);
+    document.getElementById("sekunder1").value = formatDiagnosa(sek1);
+    document.getElementById("sekunder2").value = formatDiagnosa(sek2);
 }
