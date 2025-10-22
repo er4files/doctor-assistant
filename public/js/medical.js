@@ -11,11 +11,13 @@ const realtimePopup = document.getElementById("realtimePopup");
 const reAnalyzeBtn = document.getElementById("reAnalyzeBtn");
 const loadingOverlay = document.getElementById("loadingOverlay");
 
-let recognition, isRecording = false,
-    recordedText = "",
-    previousTranscript = "";
+let recognition;
+let isRecording = false;
+let recordedText = "";
+let previousTranscript = "";
+let restartTimeout = null;
 
-// === Fungsi helper untuk loading ===
+// === Fungsi helper loading ===
 function showLoading(message = "Sedang menganalisis...") {
     loadingOverlay.style.display = "flex";
     loadingOverlay.querySelector("p").textContent = message;
@@ -32,6 +34,7 @@ if ("webkitSpeechRecognition" in window) {
     recognition.continuous = true;
     recognition.interimResults = true;
 
+    // === Saat hasil baru muncul ===
     recognition.onresult = (event) => {
         let transcript = "";
         let isFinal = false;
@@ -41,22 +44,51 @@ if ("webkitSpeechRecognition" in window) {
             if (event.results[i].isFinal) isFinal = true;
         }
 
-        if (isFinal && transcript !== previousTranscript) {
-            recordedText += transcript + " ";
-            previousTranscript = transcript;
-            conversationInput.value = recordedText;
+        if (isFinal && transcript.trim() !== "") {
+            // Hindari duplikasi teks
+            if (!recordedText.endsWith(transcript.trim())) {
+                recordedText += transcript.trim() + " ";
+                conversationInput.value = recordedText;
+            }
 
+            // Tampilkan popup realtime
             realtimePopup.textContent = transcript;
             realtimePopup.style.display = "block";
             clearTimeout(window.popupTimeout);
-            window.popupTimeout = setTimeout(() => realtimePopup.style.display = "none", 1500);
+            window.popupTimeout = setTimeout(() => {
+                realtimePopup.style.display = "none";
+            }, 1500);
         }
     };
 
+    // === Saat sesi berhenti (otomatis atau manual) ===
     recognition.onend = async () => {
-        if (!isRecording && recordedText.trim() !== "") {
+        if (isRecording) {
+            console.log("🎙 Rekaman berhenti otomatis — melanjutkan...");
+            clearTimeout(restartTimeout);
+            restartTimeout = setTimeout(() => {
+                try {
+                    recognition.start();
+                } catch (e) {
+                    console.warn("⚠️ Restart gagal:", e);
+                }
+            }, 500); // restart setelah 0.5 detik
+        } else if (recordedText.trim() !== "") {
             console.log("🎯 Rekaman selesai, analisis otomatis...");
             await analyzeConversation(recordedText);
+        }
+    };
+
+    recognition.onerror = (event) => {
+        console.error("❌ Speech recognition error:", event.error);
+        if (event.error === "network" || event.error === "no-speech") return;
+        if (isRecording) {
+            try {
+                recognition.stop();
+                setTimeout(() => recognition.start(), 1000);
+            } catch (err) {
+                console.warn("Gagal restart setelah error:", err);
+            }
         }
     };
 } else {
@@ -68,19 +100,31 @@ voiceBtn.addEventListener("click", () => {
     if (!recognition) return;
 
     if (!isRecording) {
-        recognition.start();
-        isRecording = true;
-        recordedText = "";
-        previousTranscript = "";
-        voiceBtn.textContent = "🛑 Stop Rekam";
-        voiceBtn.classList.remove("btn-record");
-        voiceBtn.classList.add("btn-stop");
+        // Mulai merekam
+        try {
+            recognition.start();
+            isRecording = true;
+            recordedText = "";
+            previousTranscript = "";
+            voiceBtn.textContent = "🛑 Stop Rekam";
+            voiceBtn.classList.remove("btn-record");
+            voiceBtn.classList.add("btn-stop");
+            console.log("🎙 Rekaman dimulai...");
+        } catch (err) {
+            console.error("Gagal memulai rekaman:", err);
+        }
     } else {
-        recognition.stop();
+        // Hentikan rekaman manual
         isRecording = false;
+        try {
+            recognition.stop();
+        } catch (err) {
+            console.error("Gagal menghentikan rekaman:", err);
+        }
         voiceBtn.textContent = "🎙 Mulai Rekam";
         voiceBtn.classList.remove("btn-stop");
         voiceBtn.classList.add("btn-record");
+        console.log("🛑 Rekaman dihentikan oleh pengguna.");
     }
 });
 
@@ -150,7 +194,6 @@ function updateDiagnosa(data) {
         const name = d.diagnosa || "-";
         const icd = d.icd10 || "";
         const conf = d.confidence ? ` (${(d.confidence * 100).toFixed(1)}%)` : "";
-        // format: K29.7 - Gastritis (82.0%)
         return `${icd} - ${name}${conf}`;
     }
 
